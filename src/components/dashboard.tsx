@@ -26,7 +26,7 @@ import {
 } from "@/lib/data";
 import { DEMO_TARGETS, DEMO_TARGET_LIST, type DemoTarget } from "@/lib/targets";
 
-const STORE_KEY = "invariant_run_v1";
+const STORE_KEY = "invariant_run_v2";
 
 type RunStatus = "idle" | "running" | "paused" | "done";
 type ViewId = "live" | "findings" | "tests" | "history";
