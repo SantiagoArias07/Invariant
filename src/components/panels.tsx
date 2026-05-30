@@ -128,7 +128,7 @@ export function FeedPanel({
 }
 
 /* ---------- Browser preview ---------- */
-export const FRAME_PATH: Record<FrameId, string> = {
+export const FRAME_PATH: Partial<Record<FrameId, string>> = {
   home: "/",
   cart: "/cart",
   cartQty: "/cart",
@@ -182,13 +182,19 @@ export function BrowserPreview({
   captured,
   running,
   onPick,
+  targetUrl = "demo-shop.invariant.dev",
+  targetFrameOrder = FRAME_ORDER,
+  targetFramePath = FRAME_PATH,
 }: {
   frame: FrameId;
   captured: FrameId[];
   running: boolean;
   onPick?: (f: FrameId) => void;
+  targetUrl?: string;
+  targetFrameOrder?: FrameId[];
+  targetFramePath?: Partial<Record<FrameId, string>>;
 }) {
-  const path = FRAME_PATH[frame] ?? "/";
+  const path = targetFramePath[frame] ?? "/";
   return (
     <div
       className="panel"
@@ -216,7 +222,7 @@ export function BrowserPreview({
             <span className="bc-dot" style={{ background: "#28c840" }}></span>
             <div className="bc-url mono">
               <Icon name="dot" size={10} style={{ color: "var(--tx-3)" }} />
-              demo-shop.invariant.dev
+              {targetUrl}
               <span style={{ color: "var(--tx-0)" }}>{path}</span>
             </div>
             <Icon name="refresh" size={13} style={{ color: "var(--tx-2)" }} />
@@ -230,7 +236,7 @@ export function BrowserPreview({
       <div className="filmstrip">
         <div className="film-label mono">CAPTURES</div>
         <div className="film-track">
-          {FRAME_ORDER.filter((f) => captured.includes(f)).map((f) => (
+          {targetFrameOrder.filter((f) => captured.includes(f)).map((f) => (
             <Thumb
               key={f}
               frame={f}

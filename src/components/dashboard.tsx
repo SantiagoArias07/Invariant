@@ -17,17 +17,14 @@ import {
   HistoryView,
 } from "@/components/views";
 import {
-  FINDINGS,
   HISTORY,
   PHASES,
-  RUN,
-  TARGET,
-  TESTS,
   type Finding,
   type FrameId,
   type PhaseId,
   type RunEventWithTs,
 } from "@/lib/data";
+import { DEMO_TARGETS, DEMO_TARGET_LIST, type DemoTarget } from "@/lib/targets";
 
 const STORE_KEY = "invariant_run_v1";
 
@@ -54,6 +51,7 @@ export default function DashboardApp() {
   const [sel, setSel] = useState<Finding | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [mode, setMode] = useState<RunMode>("live");
+  const [selectedTargetId, setSelectedTargetId] = useState<string>("ecommerce");
 
   const idx = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -61,6 +59,8 @@ export default function DashboardApp() {
   const elapsedRef = useRef(0);
   const runKind = useRef<RunMode>("demo");
   const liveAbort = useRef<AbortController | null>(null);
+  // active target data — updated when selectedTargetId changes
+  const targetData = useRef<DemoTarget>(DEMO_TARGETS["ecommerce"]);
   // mirror of accumulated run state, so finish() can persist either mode
   const snap = useRef<{ events: RunEventWithTs[]; captured: FrameId[]; findings: string[]; frame: FrameId }>(
     { events: [], captured: [], findings: [], frame: "home" },
@@ -77,7 +77,7 @@ export default function DashboardApp() {
         setCaptured((s.captured as FrameId[]) || []);
         setFindings(
           ((s.findings as string[]) || [])
-            .map((id) => FINDINGS.find((f) => f.id === id))
+            .map((id) => targetData.current.findings.find((f) => f.id === id))
             .filter((f): f is Finding => Boolean(f)),
         );
         setTestsUnlocked(true);
@@ -121,7 +121,7 @@ export default function DashboardApp() {
       setCaptured((c) => (c.includes(fr) ? c : [...c, fr]));
     }
     if (e.finding) {
-      const f = FINDINGS.find((x) => x.id === e.finding);
+      const f = targetData.current.findings.find((x) => x.id === e.finding);
       if (f) {
         if (!snap.current.findings.includes(f.id)) snap.current.findings.push(f.id);
         setFindings((prev) => (prev.find((p) => p.id === f.id) ? prev : [...prev, f]));
@@ -155,11 +155,12 @@ export default function DashboardApp() {
 
   /* ---- scripted demo engine (deterministic, offline fallback) ---- */
   const step = () => {
-    if (idx.current >= RUN.length) {
+    const run = targetData.current.run;
+    if (idx.current >= run.length) {
       finish();
       return;
     }
-    const e = RUN[idx.current];
+    const e = run[idx.current];
     pushEvent({ ...e, ts: fmtClock(elapsedRef.current) });
     const dur = e.dur || 1000;
     idx.current++;
@@ -228,7 +229,6 @@ export default function DashboardApp() {
       onDone: finish,
       onFallback: (reason) => {
         if (ctrl.signal.aborted) return;
-        // live unavailable → seamlessly play the deterministic demo instead
         showToast("Live agent unavailable — playing demo run");
         // eslint-disable-next-line no-console
         console.warn("[invariant] live audit fell back:", reason);
@@ -237,9 +237,12 @@ export default function DashboardApp() {
     });
   };
 
-  const launch = () => {
-    if (mode === "demo") launchScripted();
-    else launchLive();
+  const launch = (targetId?: string) => {
+    const tid = targetId || selectedTargetId;
+    targetData.current = DEMO_TARGETS[tid] ?? DEMO_TARGETS["ecommerce"];
+    // Non-ecommerce targets don't have a live agent — use scripted
+    if (mode === "live" && targetData.current.liveEnabled) launchLive();
+    else launchScripted();
   };
 
   const pause = () => {
@@ -301,7 +304,13 @@ export default function DashboardApp() {
         <div className="workspace">
           {view === "live" &&
             (status === "idle" && events.length === 0 ? (
-              <AuditHero onLaunch={launch} mode={mode} setMode={setMode} />
+              <AuditHero
+                onLaunch={launch}
+                mode={mode}
+                setMode={setMode}
+                selectedTargetId={selectedTargetId}
+                setSelectedTargetId={setSelectedTargetId}
+              />
             ) : (
               <LiveView
                 status={status}
@@ -317,9 +326,12 @@ export default function DashboardApp() {
                 setView={setView}
                 onPause={pause}
                 onResume={resume}
-                onRerun={launch}
+                onRerun={() => launch(selectedTargetId)}
                 onNewAudit={goToHero}
                 setFrame={setFrame}
+                targetUrl={targetData.current.url}
+                targetFrameOrder={targetData.current.frameOrder}
+                targetFramePath={targetData.current.framePath}
               />
             ))}
           {view === "findings" && (
@@ -346,7 +358,7 @@ export default function DashboardApp() {
       {sel && (
         <FindingDrawer
           finding={sel}
-          test={TESTS[sel.test]}
+          test={targetData.current.tests[sel.test]}
           onClose={() => setSel(null)}
           onCopy={() => showToast("Test copied to clipboard")}
         />
@@ -362,44 +374,88 @@ export default function DashboardApp() {
 }
 
 /* ---------- New Audit hero ---------- */
+const TARGET_ICONS: Record<string, string> = {
+  ecommerce: "🛒",
+  saas: "📦",
+  banking: "🏦",
+};
+
 function AuditHero({
   onLaunch,
   mode,
   setMode,
+  selectedTargetId,
+  setSelectedTargetId,
 }: {
-  onLaunch: () => void;
+  onLaunch: (targetId: string) => void;
   mode: RunMode;
   setMode: (m: RunMode) => void;
+  selectedTargetId: string;
+  setSelectedTargetId: (id: string) => void;
 }) {
-  const [url, setUrl] = useState(TARGET);
+  const selected = DEMO_TARGETS[selectedTargetId] ?? DEMO_TARGETS["ecommerce"];
+  const canLive = selected.liveEnabled;
+
   return (
     <div className="audit-hero">
-      <div className="audit-card fade-in">
+      <div className="audit-card fade-in" style={{ width: 620 }}>
         <span className="pill pill-acc badge">
           <span className="live-dot"></span>Adversarial QA agent
         </span>
         <h2>Prove your app wrong.</h2>
         <p>
-          Point Invariant at a running web app. It explores the interface, infers the
-          business rules that must hold, then attacks each one until something
-          contradicts itself.
+          Select a target. Invariant explores the interface, infers the business rules
+          that must hold, then attacks each one until something breaks.
         </p>
+
+        {/* Target selector */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, margin: "0 0 16px" }}>
+          {DEMO_TARGET_LIST.map((t) => (
+            <div
+              key={t.id}
+              onClick={() => setSelectedTargetId(t.id)}
+              style={{
+                border: `1px solid ${selectedTargetId === t.id ? "var(--acc-line)" : "var(--line-2)"}`,
+                background: selectedTargetId === t.id ? "var(--acc-soft)" : "var(--bg-1)",
+                borderRadius: 10,
+                padding: "12px 14px",
+                cursor: "pointer",
+                transition: "all .13s",
+                textAlign: "left",
+              }}
+            >
+              <div style={{ fontSize: 18, marginBottom: 6 }}>{TARGET_ICONS[t.id]}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: selectedTargetId === t.id ? "var(--acc)" : "var(--tx-0)" }}>{t.name}</div>
+              <div style={{ fontSize: 11, color: "var(--tx-2)", fontFamily: "var(--mono)", marginTop: 2 }}>{t.category}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 8 }}>
+                {t.liveEnabled
+                  ? <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 999, background: "var(--ok-soft)", color: "var(--ok)", border: "1px solid rgba(91,191,155,0.3)", fontFamily: "var(--mono)" }}>Live ✓</span>
+                  : <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 999, background: "var(--bg-3)", color: "var(--tx-3)", border: "1px solid var(--line-2)", fontFamily: "var(--mono)" }}>Demo</span>
+                }
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Mode toggle */}
         <div className="mode-toggle" role="tablist" aria-label="Run mode">
           <button
             role="tab"
             aria-selected={mode === "live"}
-            className={"mode-opt" + (mode === "live" ? " on" : "")}
-            onClick={() => setMode("live")}
+            className={"mode-opt" + (mode === "live" ? " on" : "") + (!canLive ? " disabled" : "")}
+            onClick={() => canLive && setMode("live")}
+            title={!canLive ? "Live agent only available for Northwind" : undefined}
+            style={!canLive ? { opacity: 0.45, cursor: "not-allowed" } : {}}
           >
             <span className="mode-main">
               <Icon name="bolt" size={12} /> Live agent
             </span>
-            <span className="mode-sub">Claude, real-time</span>
+            <span className="mode-sub">{canLive ? "Claude, real-time" : "ecommerce only"}</span>
           </button>
           <button
             role="tab"
             aria-selected={mode === "demo"}
-            className={"mode-opt" + (mode === "demo" ? " on" : "")}
+            className={"mode-opt" + (mode === "demo" || !canLive ? " on" : "")}
             onClick={() => setMode("demo")}
           >
             <span className="mode-main">
@@ -408,35 +464,16 @@ function AuditHero({
             <span className="mode-sub">Deterministic replay</span>
           </button>
         </div>
+
+        {/* URL bar (read-only, shows selected target) */}
         <div className="audit-input-row">
-          <div className="field">
+          <div className="field" style={{ pointerEvents: "none" }}>
             <Icon name="dot" size={12} style={{ color: "var(--acc)" }} />
-            <input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              spellCheck="false"
-            />
+            <input value={selected.url} readOnly spellCheck="false" style={{ color: "var(--tx-1)" }} />
           </div>
-          <button className="btn btn-primary" onClick={onLaunch}>
+          <button className="btn btn-primary" onClick={() => onLaunch(selectedTargetId)}>
             <Icon name="bolt" size={15} /> Launch audit
           </button>
-        </div>
-        <div className="suggest">
-          <span
-            className="dimmer mono"
-            style={{ fontSize: 11.5, alignSelf: "center" }}
-          >
-            try
-          </span>
-          <span className="chip" onClick={onLaunch}>
-            demo-shop.invariant.dev
-          </span>
-          <span className="chip" onClick={onLaunch}>
-            app.northwind.io
-          </span>
-          <span className="chip" onClick={onLaunch}>
-            staging.fern.app
-          </span>
         </div>
       </div>
     </div>
@@ -504,6 +541,9 @@ type LiveViewProps = {
   onRerun: () => void;
   onNewAudit: () => void;
   setFrame: (f: FrameId) => void;
+  targetUrl: string;
+  targetFrameOrder: FrameId[];
+  targetFramePath: Partial<Record<FrameId, string>>;
 };
 
 function LiveView(p: LiveViewProps) {
@@ -517,7 +557,7 @@ function LiveView(p: LiveViewProps) {
             style={{ background: p.running ? "var(--acc)" : "var(--tx-2)" }}
           ></span>
           <div className="col" style={{ gap: 2 }}>
-            <span className="url">{TARGET}</span>
+            <span className="url">{p.targetUrl}</span>
             <span className="rid">run #A-1042 · Chromium 124 · headless</span>
           </div>
         </div>
@@ -569,6 +609,9 @@ function LiveView(p: LiveViewProps) {
             captured={p.captured}
             running={p.running}
             onPick={p.setFrame}
+            targetUrl={p.targetUrl}
+            targetFrameOrder={p.targetFrameOrder}
+            targetFramePath={p.targetFramePath}
           />
 
           <div

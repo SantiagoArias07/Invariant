@@ -32,14 +32,12 @@ export type EventKind =
   | "rep";
 
 export type FrameId =
-  | "home"
-  | "cart"
-  | "cartQty"
-  | "cartNeg"
-  | "coupon1"
-  | "coupon3"
-  | "checkout"
-  | "orderPaid";
+  // ecommerce
+  | "home" | "cart" | "cartQty" | "cartNeg" | "coupon1" | "coupon3" | "checkout" | "orderPaid"
+  // saas
+  | "saas-home" | "saas-billing" | "saas-planChange" | "saas-trialReset" | "saas-downgrade" | "saas-apiAccess" | "saas-seatOverflow"
+  // banking
+  | "bank-home" | "bank-transfer" | "bank-negTransfer" | "bank-transfer1" | "bank-transfer2" | "bank-overdraft";
 
 export type RunEvent = {
   k: EventKind;
