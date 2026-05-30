@@ -53,6 +53,7 @@ const RUN_SAAS: RunEvent[] = [
   { k:"think", txt:"This is a subscription management app. Trial expiry, feature access after downgrade, and seat limits are the trust boundaries.", dur:1700 },
   { k:"nav", txt:"Navigating /billing", frame:"saas-billing", dur:800 },
   { k:"see", txt:"Found trial banner (12 days left), plan selector, API key panel.", sub:"DOM + screenshot captured", dur:900 },
+  { k:"ux", id:"UX-01", txt:"Plan-change confirms with a generic toast but doesn't show before/after billing impact — users approve charges they don't fully understand.", sub:"billing · plan selector", rec:"Surface a confirmation modal with old plan, new plan, prorated cost, and renewal date.", dur:1700 },
   { k:"think", txt:"Three things a SaaS must never get wrong: when trials expire, what features Free gets, how many seats fit. Stating each.", dur:1700 },
 
   { k:"inv", phase:"hypothesize", id:"INV-01", txt:"Trial period expires exactly 14 days after signup — plan changes don't reset the clock.", dur:1100 },
@@ -68,11 +69,13 @@ const RUN_SAAS: RunEvent[] = [
 
   { k:"atk", txt:"Downgrade plan to Free", frame:"saas-downgrade", sub:"POST /billing/plan {plan: 'free'}", dur:900 },
   { k:"chk", txt:"Plan shows Free. Expected.", dur:750 },
+  { k:"ux", id:"UX-02", txt:"After downgrade the API key panel still says “active” with no warning — locked-out users will think the key was revoked silently.", sub:"billing · api keys panel", rec:"On any plan change that affects entitlements, show a banner: “Your existing API keys retain access until …”.", dur:1700 },
   { k:"atk", txt:"GET /api/v1/analytics with existing API key", frame:"saas-apiAccess", dur:950 },
   { k:"viol", finding:"F-02", txt:"Analytics returned 200 with full data on a Free plan.", sub:"INV-02 violated — downgrade doesn't revoke API access", dur:1800 },
 
   { k:"atk", txt:"Invite 6th member to 5-seat team", frame:"saas-seatOverflow", sub:"POST /team/invite", dur:950 },
   { k:"see", txt:"Invite accepted. No seat cap enforced at invite time.", dur:900 },
+  { k:"ux", id:"UX-03", txt:"Team page shows 5/5 seats without flagging that more invites are pending — admins lose track of who actually consumes the seat.", sub:"team · seat counter", rec:"Render seat usage as a stacked bar (active + pending + over-limit) with distinct colors.", dur:1700 },
   { k:"viol", finding:"F-03", txt:"Team has 6 active members on a 5-seat plan.", sub:"INV-03 violated — seat limit not enforced at invite", dur:1800 },
 
   { k:"sys", phase:"report", txt:"Attack surface exhausted", sub:"3 contradictions · 0 false positives", dur:1000 },
@@ -214,6 +217,7 @@ const RUN_BANKING: RunEvent[] = [
   { k:"think", txt:"Banking transfer flow. Amount integrity, idempotency, and overdraft prevention are the invariants with the highest blast radius.", dur:1700 },
   { k:"nav", txt:"Navigating /transfer", frame:"bank-transfer", dur:800 },
   { k:"see", txt:"Found amount field, recipient selector, reference field, submit button.", sub:"DOM + screenshot captured", dur:900 },
+  { k:"ux", id:"UX-01", txt:"Amount input is type=\"text\" — no numeric keypad on mobile and no client-side numeric format, which accepts arbitrary characters.", sub:"transfer form · amount field", rec:"Use type=\"number\" with inputmode=\"decimal\" and a live currency mask.", dur:1700 },
   { k:"think", txt:"Three invariants: positive amounts only, idempotent submissions, no overdraft. Cheapest first — negative amount.", dur:1700 },
 
   { k:"inv", phase:"hypothesize", id:"INV-01", txt:"Transfer amount must be a positive number greater than zero.", dur:1100 },
@@ -229,11 +233,13 @@ const RUN_BANKING: RunEvent[] = [
 
   { k:"atk", txt:"Submit transfer $200 (ref: T-0041)", frame:"bank-transfer1", sub:"POST /transfers {amount:200, ref:'T-0041'}", dur:950 },
   { k:"chk", txt:"Transfer #T-0041 created. Expected.", dur:750 },
+  { k:"ux", id:"UX-02", txt:"Submit button stays enabled and reference field is editable while the previous request is in flight — invites the duplicate that triggers the idempotency bug.", sub:"transfer form · submit button", rec:"Disable the form on submit and freeze the reference until the API returns 201/4xx.", dur:1700 },
   { k:"atk", txt:"Re-submit identical payload", frame:"bank-transfer2", dur:950 },
   { k:"viol", finding:"F-02", txt:"Transfer #T-0042 created. Same reference accepted twice — $200 debited twice.", sub:"INV-02 violated — no idempotency on transfer endpoint", dur:1800 },
 
   { k:"atk", txt:"Transfer exact balance $1,200 (fee $4.99 applied post-check)", frame:"bank-overdraft", sub:"POST /transfers {amount:1200}", dur:950 },
   { k:"see", txt:"Transfer accepted. Fee deducted after balance check.", dur:900 },
+  { k:"ux", id:"UX-03", txt:"Transfer summary shows the amount only — the $4.99 fee is never previewed, so users don't realize the “send all” path will overdraft them.", sub:"transfer summary · fee disclosure", rec:"Render a line-item summary (amount + fee + new balance) above the confirm button.", dur:1700 },
   { k:"viol", finding:"F-03", txt:"Balance: -$4.99. Fee applied after the zero-balance guard.", sub:"INV-03 violated — fee bypasses overdraft protection", dur:1800 },
 
   { k:"sys", phase:"report", txt:"Attack surface exhausted", sub:"3 contradictions · 0 false positives", dur:1000 },

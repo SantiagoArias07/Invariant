@@ -18,6 +18,7 @@ const KIND: Record<EventKind, { tag: string; cls: string }> = {
   chk: { tag: "CHECK", cls: "k-chk" },
   viol: { tag: "VIOLATION", cls: "k-viol" },
   rep: { tag: "REPORT", cls: "k-rep" },
+  ux: { tag: "UX SUGGESTION", cls: "k-ux" },
 };
 
 function FeedItem({ e, last }: { e: RunEventWithTs; last: boolean }) {
@@ -25,13 +26,15 @@ function FeedItem({ e, last }: { e: RunEventWithTs; last: boolean }) {
   const dotColor =
     e.k === "viol"
       ? "var(--red)"
-      : e.k === "inv" || e.k === "atk" || e.k === "rep"
-        ? "var(--acc)"
-        : e.k === "think"
-          ? "var(--acc-dim)"
-          : e.k === "chk"
-            ? "var(--ok)"
-            : "var(--tx-2)";
+      : e.k === "ux"
+        ? "var(--blue)"
+        : e.k === "inv" || e.k === "atk" || e.k === "rep"
+          ? "var(--acc)"
+          : e.k === "think"
+            ? "var(--acc-dim)"
+            : e.k === "chk"
+              ? "var(--ok)"
+              : "var(--tx-2)";
 
   return (
     <div className={"feed-item fade-in " + meta.cls}>
@@ -71,6 +74,12 @@ function FeedItem({ e, last }: { e: RunEventWithTs; last: boolean }) {
             }}
           >
             <Icon name="test" size={12} /> Regression test written to repo
+          </div>
+        )}
+        {e.k === "ux" && e.rec && (
+          <div className="feed-ux-tag">
+            <span style={{ fontSize: 13, lineHeight: 1 }}>💡</span>
+            <span><b>Recommended:</b> {e.rec}</span>
           </div>
         )}
       </div>

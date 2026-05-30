@@ -25,6 +25,28 @@ const MODEL = process.env.AGENT_MODEL || "claude-sonnet-4-6";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /* ============================================================
+   Shared UX suggestion tool — emitted by Claude during exploration.
+   Capped at 3 suggestions per run (enforced in the loop) to keep
+   the agent focused and the cost predictable.
+   ============================================================ */
+const UX_TOOL: Anthropic.Tool = {
+  name: "suggest_ux_improvement",
+  description:
+    "Emit a non-critical UX/UI recommendation when you notice friction in the flow (a dropdown that locks layout, a missing skeleton loader, a form that needs an extra step, etc). DIFFERENT from invariant violations — these are blue suggestions, not red bugs. Cap: up to 3 per audit. Only call when you see real friction.",
+  input_schema: {
+    type: "object",
+    properties: {
+      area: { type: "string", description: "Short label of the affected surface (e.g. 'checkout form', 'billing dropdown')." },
+      observation: { type: "string", description: "What you observed (one sentence)." },
+      recommendation: { type: "string", description: "Concrete improvement (one sentence)." },
+    },
+    required: ["area", "observation", "recommendation"],
+  },
+};
+
+const UX_RULE = `\nOptional: while exploring, you may call suggest_ux_improvement UP TO 3 TIMES total per audit. Only when you spot real user-experience friction (forms, dropdowns, loading states, error feedback). These are BLUE suggestions, separate from red invariant violations. Do NOT exceed 3.`;
+
+/* ============================================================
    ECOMMERCE config
    ============================================================ */
 const ECOM_CODE_TO_INV: Record<string, ViolationId> = {
@@ -56,7 +78,7 @@ Work in four phases:
   3. ATTACK — try to break each invariant. When a tool response contains "INVARIANT_VIOLATED: code=XYZ", call report_finding with that exact code.
   4. Stop when you've probed every invariant.
 
-Rules: Write ONE sentence of reasoning before each tool call. Only report_finding for codes the tools actually returned. Find all three bugs. No closing summary.`;
+Rules: Write ONE sentence of reasoning before each tool call. Only report_finding for codes the tools actually returned. Find all three bugs. No closing summary.${UX_RULE}`;
 
 const ECOM_TOOLS: Anthropic.Tool[] = [
   { name: "declare_invariant", description: "State a business-logic invariant before trying to break it.", input_schema: { type: "object", properties: { statement: { type: "string" } }, required: ["statement"] } },
@@ -68,6 +90,7 @@ const ECOM_TOOLS: Anthropic.Tool[] = [
   { name: "checkout", description: "Open a pending order from the current cart.", input_schema: { type: "object", properties: {} } },
   { name: "refresh_browser", description: "Simulate a hard browser refresh during checkout.", input_schema: { type: "object", properties: {} } },
   { name: "place_order", description: "Submit/confirm the pending order for payment.", input_schema: { type: "object", properties: {} } },
+  UX_TOOL,
   {
     name: "report_finding", description: "Record a confirmed invariant violation. Only call after a tool showed INVARIANT_VIOLATED.",
     input_schema: { type: "object", properties: { violation_code: { type: "string", enum: ["NEGATIVE_TOTAL", "COUPON_STACK", "UNPAID_ORDER"] }, title: { type: "string" }, observed: { type: "string" } }, required: ["violation_code", "title", "observed"] },
@@ -107,7 +130,7 @@ Work in four phases:
   3. ATTACK — try each one: change plans mid-trial, downgrade and test the API key, invite more members than the seat limit. When a tool response contains "INVARIANT_VIOLATED: code=XYZ", call report_finding with that exact code.
   4. Stop when all invariants are probed.
 
-Rules: ONE sentence of reasoning before each tool call. Only report confirmed violations. Find all three bugs. No closing summary.`;
+Rules: ONE sentence of reasoning before each tool call. Only report confirmed violations. Find all three bugs. No closing summary.${UX_RULE}`;
 
 const SAAS_TOOLS: Anthropic.Tool[] = [
   { name: "declare_invariant", description: "State a billing invariant before trying to break it.", input_schema: { type: "object", properties: { statement: { type: "string" } }, required: ["statement"] } },
@@ -117,6 +140,7 @@ const SAAS_TOOLS: Anthropic.Tool[] = [
   { name: "call_analytics_api", description: "Call GET /api/v1/analytics with the existing API key. Returns HTTP status + data.", input_schema: { type: "object", properties: {} } },
   { name: "view_team", description: "List team members and seat usage.", input_schema: { type: "object", properties: {} } },
   { name: "invite_member", description: "Invite a new team member by email.", input_schema: { type: "object", properties: { email: { type: "string" } }, required: ["email"] } },
+  UX_TOOL,
   {
     name: "report_finding", description: "Record a confirmed invariant violation. Only call after a tool showed INVARIANT_VIOLATED.",
     input_schema: { type: "object", properties: { violation_code: { type: "string", enum: ["TRIAL_RESET", "API_NOT_REVOKED", "SEAT_OVERFLOW"] }, title: { type: "string" }, observed: { type: "string" } }, required: ["violation_code", "title", "observed"] },
@@ -156,7 +180,7 @@ Work in four phases:
   3. ATTACK — try: negative amount transfer, re-submit the exact same ref twice, then transfer the exact account balance (fee applies after). When a tool response contains "INVARIANT_VIOLATED: code=XYZ", call report_finding with that exact code.
   4. Stop when all invariants are probed.
 
-Rules: ONE sentence of reasoning before each tool call. Only report confirmed violations. Find all three bugs. No closing summary.`;
+Rules: ONE sentence of reasoning before each tool call. Only report confirmed violations. Find all three bugs. No closing summary.${UX_RULE}`;
 
 const BANK_TOOLS: Anthropic.Tool[] = [
   { name: "declare_invariant", description: "State a financial invariant before trying to break it.", input_schema: { type: "object", properties: { statement: { type: "string" } }, required: ["statement"] } },
@@ -166,6 +190,7 @@ const BANK_TOOLS: Anthropic.Tool[] = [
     name: "submit_transfer", description: "Submit a transfer. amount can be any number (positive or negative to test validation). Use the same ref twice to test idempotency. To test overdraft: set amount = current balance (fee applies after).",
     input_schema: { type: "object", properties: { amount: { type: "number" }, recipient: { type: "string" }, ref: { type: "string" } }, required: ["amount", "recipient", "ref"] },
   },
+  UX_TOOL,
   {
     name: "report_finding", description: "Record a confirmed invariant violation. Only call after a tool showed INVARIANT_VIOLATED.",
     input_schema: { type: "object", properties: { violation_code: { type: "string", enum: ["NEGATIVE_TRANSFER", "DUPLICATE_TRANSFER", "OVERDRAFT_FEE"] }, title: { type: "string" }, observed: { type: "string" } }, required: ["violation_code", "title", "observed"] },
@@ -188,6 +213,8 @@ const PHASE_FOR: Record<string, RunEvent["phase"]> = {
   // banking
   view_transfer_form: "explore", submit_transfer: "attack",
   report_finding: "attack",
+  // ux (cross-target)
+  suggest_ux_improvement: "explore",
 };
 
 /* ============================================================
@@ -282,6 +309,7 @@ function makeLoop(
     const { client, emit, closed } = ctx;
     const reported = new Set<string>();
     let invCount = 0;
+    let uxCount = 0;
 
     const messages: Anthropic.MessageParam[] = [{ role: "user", content: initialMessage }];
 
@@ -315,6 +343,28 @@ function makeLoop(
             invCount++;
             await emit({ k: "inv", phase, id: `INV-${String(invCount).padStart(2, "0")}`, txt: String(input.statement || "Invariant") });
             toolResults.push({ type: "tool_result", tool_use_id: block.id, content: "noted" });
+            continue;
+          }
+
+          if (name === "suggest_ux_improvement") {
+            if (uxCount >= 3) {
+              // Hard cap: refuse extra suggestions, keeping the agent focused and the cost bounded.
+              toolResults.push({ type: "tool_result", tool_use_id: block.id, content: "UX suggestion cap reached (3). Skip further UX calls." });
+              continue;
+            }
+            uxCount++;
+            const area = String(input.area || "");
+            const obs = String(input.observation || "");
+            const rec = String(input.recommendation || "");
+            await emit({
+              k: "ux",
+              phase,
+              id: `UX-${String(uxCount).padStart(2, "0")}`,
+              txt: obs,
+              sub: area,
+              rec,
+            });
+            toolResults.push({ type: "tool_result", tool_use_id: block.id, content: "noted — UX suggestion recorded" });
             continue;
           }
 
@@ -357,10 +407,11 @@ function makeLoop(
     await safetySurface(reported);
 
     const found = [...reported];
-    await emit({ k: "sys", phase: "report", txt: "Attack surface exhausted", sub: `${found.length} contradiction${found.length === 1 ? "" : "s"} · 0 false positives` });
+    const uxLabel = uxCount > 0 ? ` · ${uxCount} UX suggestion${uxCount === 1 ? "" : "s"}` : "";
+    await emit({ k: "sys", phase: "report", txt: "Attack surface exhausted", sub: `${found.length} contradiction${found.length === 1 ? "" : "s"} · 0 false positives${uxLabel}` });
     await emit({ k: "rep", txt: "Generating reproducible Playwright regression tests…" }, 700);
     await emit({ k: "rep", test: true, txt: `${found.length || 3} regression specs written to repo`, sub: "one per finding" });
-    await emit({ k: "sys", txt: "Audit complete", sub: `${found.length} finding${found.length === 1 ? "" : "s"} · live agent`, done: true });
+    await emit({ k: "sys", txt: "Audit complete", sub: `${found.length} finding${found.length === 1 ? "" : "s"}${uxLabel} · live agent`, done: true });
   };
 }
 

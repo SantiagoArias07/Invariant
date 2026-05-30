@@ -29,7 +29,8 @@ export type EventKind =
   | "atk"
   | "chk"
   | "viol"
-  | "rep";
+  | "rep"
+  | "ux";
 
 export type FrameId =
   // ecommerce
@@ -50,6 +51,8 @@ export type RunEvent = {
   test?: boolean;
   done?: boolean;
   dur?: number;
+  /** UX recommendation — the concrete suggestion (only used when k === "ux") */
+  rec?: string;
 };
 
 export type RunEventWithTs = RunEvent & { ts: string };
@@ -81,6 +84,14 @@ export const RUN: RunEvent[] = [
     txt: "Found quantity stepper, coupon field, “Place order”.",
     sub: "DOM + screenshot captured",
     dur: 1100,
+  },
+  {
+    k: "ux",
+    id: "UX-01",
+    txt: "The quantity stepper has no inline validation feedback — users discover the error only after the subtotal updates.",
+    sub: "cart · quantity stepper",
+    rec: "Show an inline error state and disable the “–” button when qty would drop below 1.",
+    dur: 1700,
   },
   {
     k: "think",
@@ -139,6 +150,14 @@ export const RUN: RunEvent[] = [
     dur: 950,
   },
   { k: "chk", txt: "−20% applied. Expected.", dur: 850 },
+  {
+    k: "ux",
+    id: "UX-02",
+    txt: "Coupon submit button stays enabled after a code is applied — invites duplicate clicks and creates the appearance of stacking discounts.",
+    sub: "cart · coupon form",
+    rec: "Disable the Apply button (or swap to a “Remove” affordance) once a coupon is active.",
+    dur: 1700,
+  },
   { k: "atk", txt: "Re-submit SAVE20 ×2", frame: "coupon3", dur: 1000 },
   {
     k: "viol",
@@ -153,6 +172,14 @@ export const RUN: RunEvent[] = [
     txt: "Begin checkout, hard-refresh mid-submit",
     frame: "checkout",
     dur: 1100,
+  },
+  {
+    k: "ux",
+    id: "UX-03",
+    txt: "“Place order” offers no loading state — users can’t tell if the submit is in flight, which encourages the very refresh that triggers the desync.",
+    sub: "checkout · place order button",
+    rec: "Show a spinner + disable the button on submit until the server confirms (or fails).",
+    dur: 1700,
   },
   {
     k: "see",
