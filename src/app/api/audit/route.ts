@@ -437,9 +437,9 @@ async function runEcommerceAudit(ctx: AuditCtx) {
   await emit({ k: "nav", txt: "Connecting to live checkout", sub: `agent · ${MODEL}` }, 240);
 
   // Hardcoded UX suggestions — fire in background, interleaved with Claude's output
-  setTimeout(() => { emit({ k: "ux", id: "UX-01", txt: "El stepper de cantidad no tiene validación inline.", sub: "cart · quantity stepper", rec: "Mostrar error inline y bloquear el botón \"–\" si la cantidad baja de 1." }); }, 8000);
-  setTimeout(() => { emit({ k: "ux", id: "UX-02", txt: "El botón de aplicar cupón se queda activo tras usarse.", sub: "cart · coupon form", rec: "Deshabilitar el botón o cambiarlo a \"Quitar\" cuando esté activo." }); }, 18000);
-  setTimeout(() => { emit({ k: "ux", id: "UX-03", txt: "El botón \"Place order\" no tiene indicador de carga (spinner), provocando que el usuario refresque por frustración.", sub: "checkout · place order button", rec: "Añadir spinner y deshabilitar en submit." }); }, 28000);
+  setTimeout(() => { emit({ k: "ux", id: "UX-01", txt: "Quantity stepper has no inline validation — users only discover the error after the subtotal updates.", sub: "cart · quantity stepper", rec: "Show an inline error state and disable the \"–\" button when qty would drop below 1." }); }, 8000);
+  setTimeout(() => { emit({ k: "ux", id: "UX-02", txt: "Coupon submit button stays enabled after a code is applied — invites duplicate clicks.", sub: "cart · coupon form", rec: "Disable the Apply button (or swap to a \"Remove\" affordance) once a coupon is active." }); }, 18000);
+  setTimeout(() => { emit({ k: "ux", id: "UX-03", txt: "\"Place order\" offers no loading state — users can't tell if the submit is in flight, encouraging the refresh that triggers desync.", sub: "checkout · place order button", rec: "Show a spinner and disable the button on submit until the server confirms or fails." }); }, 28000);
 
   const dispatch = async (name: string, input: Record<string, unknown>) => {
     if (name.startsWith("_confirm_")) {
