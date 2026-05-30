@@ -25,15 +25,54 @@ export type DemoTarget = {
 };
 
 /* ============================================================
-   ECOMMERCE — Northwind (reuses existing data verbatim)
+   ECOMMERCE — Northwind
    ============================================================ */
+const RUN_ECOMMERCE: RunEvent[] = [
+  { k:"sys", phase:"explore", frame:"home", txt:"Audit started — target acquired", sub:"https://demo-shop.invariant.dev", dur:1100 },
+  { k:"nav", txt:"Launching Chromium via Playwright", sub:"GET /", dur:900 },
+  { k:"see", txt:"Captured DOM snapshot", sub:"47 interactive nodes · 1 form · 3 routes", dur:850 },
+  { k:"think", txt:"This is a checkout flow. I'll map the surface before I push on it — assumptions are easiest to find at the edges.", dur:1700 },
+  { k:"nav", txt:"Navigating /cart", frame:"cart", dur:950 },
+  { k:"see", txt:"Found quantity stepper, coupon field, Place order button.", sub:"DOM + screenshot captured", dur:1100 },
+  { k:"ux", id:"UX-01", txt:"El stepper de cantidad no tiene validación inline.", sub:"cart · quantity stepper", rec:"Mostrar error inline y bloquear el botón \"–\" si la cantidad baja de 1.", dur:1700 },
+  { k:"think", txt:"Three things a checkout must never get wrong: price, discounts, payment state. I'll state each as an invariant, then try to break it.", dur:1900 },
+
+  { k:"inv", phase:"hypothesize", id:"INV-01", txt:"A coupon is redeemable at most once per cart.", dur:1150 },
+  { k:"inv", id:"INV-02", txt:"Every line quantity is an integer ≥ 1.", dur:1150 },
+  { k:"inv", id:"INV-03", txt:"Order total equals Σ(price × quantity) of validated lines.", dur:1250 },
+  { k:"think", txt:"Cheapest attack first: can I make the cart pay me? Probing INV-02.", dur:1500 },
+
+  { k:"atk", phase:"attack", frame:"cartQty", txt:"Set line quantity → -2 via stepper input", sub:"fill('-2') · blur()", dur:1050 },
+  { k:"see", txt:"Field accepted -2. No client validation fired.", dur:1000 },
+  { k:"atk", txt:"Recompute cart total", frame:"cartNeg", dur:1100 },
+  { k:"viol", finding:"F-01", txt:"Line total = -$359.98 · subtotal fell to -$320.00.", sub:"INV-02 violated — the store now owes the customer", dur:2000 },
+  { k:"think", txt:"That's real. Repro captured. I don't stop at one — back to the surface.", dur:1500 },
+
+  { k:"atk", txt:"Apply coupon SAVE20", frame:"coupon1", sub:"submit coupon form", dur:950 },
+  { k:"chk", txt:"−20% applied. Expected.", dur:850 },
+  { k:"ux", id:"UX-02", txt:"El botón de aplicar cupón se queda activo tras usarse.", sub:"cart · coupon form", rec:"Deshabilitar el botón o cambiarlo a \"Quitar\" cuando esté activo.", dur:1700 },
+  { k:"atk", txt:"Re-submit SAVE20 ×2", frame:"coupon3", dur:1000 },
+  { k:"viol", finding:"F-02", txt:"Discount stacked to −60%.", sub:"INV-01 violated — coupon redeemable repeatedly", dur:1900 },
+
+  { k:"atk", txt:"Begin checkout, hard-refresh mid-submit", frame:"checkout", dur:1100 },
+  { k:"ux", id:"UX-03", txt:"El botón \"Place order\" no tiene indicador de carga (spinner), provocando que el usuario refresque por frustración.", sub:"checkout · place order button", rec:"Añadir spinner y deshabilitar en submit.", dur:1700 },
+  { k:"see", txt:"Cart cleared client-side; server kept the pending order.", dur:1100 },
+  { k:"atk", txt:"Re-submit order", frame:"orderPaid", dur:1000 },
+  { k:"viol", finding:"F-03", txt:"Order #1041 created in PAID state — $0.00 captured.", sub:"INV-03 violated — checkout state desynchronized", dur:1900 },
+
+  { k:"sys", phase:"report", txt:"Attack surface exhausted", sub:"12 probes · 3 contradictions · 0 false positives", dur:1200 },
+  { k:"rep", txt:"Generating reproducible Playwright regression tests…", dur:1400 },
+  { k:"rep", test:true, txt:"invariant-02.spec.ts ready", sub:"+ 2 more", dur:1100 },
+  { k:"sys", txt:"Audit complete", sub:"runtime 00:38 · 3 findings", done:true, dur:600 },
+];
+
 const ecommerce: DemoTarget = {
   id: "ecommerce",
   name: "Northwind",
   category: "E-commerce",
   url: "demo-shop.invariant.dev",
   liveEnabled: true,
-  run: RUN,
+  run: RUN_ECOMMERCE,
   findings: FINDINGS,
   tests: TESTS,
   frameOrder: ["home","cart","cartQty","cartNeg","coupon1","coupon3","checkout","orderPaid"],
@@ -53,7 +92,7 @@ const RUN_SAAS: RunEvent[] = [
   { k:"think", txt:"This is a subscription management app. Trial expiry, feature access after downgrade, and seat limits are the trust boundaries.", dur:1700 },
   { k:"nav", txt:"Navigating /billing", frame:"saas-billing", dur:800 },
   { k:"see", txt:"Found trial banner (12 days left), plan selector, API key panel.", sub:"DOM + screenshot captured", dur:900 },
-  { k:"ux", id:"UX-01", txt:"Plan-change confirms with a generic toast but doesn't show before/after billing impact — users approve charges they don't fully understand.", sub:"billing · plan selector", rec:"Surface a confirmation modal with old plan, new plan, prorated cost, and renewal date.", dur:1700 },
+  { k:"ux", id:"UX-01", txt:"El formulario de invitación de miembros no tiene validación inline de correos.", sub:"team · invite form", rec:"Añadir validación inline para evitar retrasos en el flujo de activación.", dur:1700 },
   { k:"think", txt:"Three things a SaaS must never get wrong: when trials expire, what features Free gets, how many seats fit. Stating each.", dur:1700 },
 
   { k:"inv", phase:"hypothesize", id:"INV-01", txt:"Trial period expires exactly 14 days after signup — plan changes don't reset the clock.", dur:1100 },
@@ -69,13 +108,13 @@ const RUN_SAAS: RunEvent[] = [
 
   { k:"atk", txt:"Downgrade plan to Free", frame:"saas-downgrade", sub:"POST /billing/plan {plan: 'free'}", dur:900 },
   { k:"chk", txt:"Plan shows Free. Expected.", dur:750 },
-  { k:"ux", id:"UX-02", txt:"After downgrade the API key panel still says “active” with no warning — locked-out users will think the key was revoked silently.", sub:"billing · api keys panel", rec:"On any plan change that affects entitlements, show a banner: “Your existing API keys retain access until …”.", dur:1700 },
+  { k:"ux", id:"UX-02", txt:"Falta confirmación visual intermedia al cambiar de plan.", sub:"billing · plan selector", rec:"Mostrar un modal resumen antes de aplicar el cambio de billing.", dur:1700 },
   { k:"atk", txt:"GET /api/v1/analytics with existing API key", frame:"saas-apiAccess", dur:950 },
   { k:"viol", finding:"F-02", txt:"Analytics returned 200 with full data on a Free plan.", sub:"INV-02 violated — downgrade doesn't revoke API access", dur:1800 },
 
   { k:"atk", txt:"Invite 6th member to 5-seat team", frame:"saas-seatOverflow", sub:"POST /team/invite", dur:950 },
   { k:"see", txt:"Invite accepted. No seat cap enforced at invite time.", dur:900 },
-  { k:"ux", id:"UX-03", txt:"Team page shows 5/5 seats without flagging that more invites are pending — admins lose track of who actually consumes the seat.", sub:"team · seat counter", rec:"Render seat usage as a stacked bar (active + pending + over-limit) with distinct colors.", dur:1700 },
+  { k:"ux", id:"UX-03", txt:"Los dropdowns de API keys premium confunden el límite de uso.", sub:"billing · api keys panel", rec:"Añadir un tag de \"Premium Only\" al lado de los endpoints bloqueados.", dur:1700 },
   { k:"viol", finding:"F-03", txt:"Team has 6 active members on a 5-seat plan.", sub:"INV-03 violated — seat limit not enforced at invite", dur:1800 },
 
   { k:"sys", phase:"report", txt:"Attack surface exhausted", sub:"3 contradictions · 0 false positives", dur:1000 },
@@ -217,7 +256,7 @@ const RUN_BANKING: RunEvent[] = [
   { k:"think", txt:"Banking transfer flow. Amount integrity, idempotency, and overdraft prevention are the invariants with the highest blast radius.", dur:1700 },
   { k:"nav", txt:"Navigating /transfer", frame:"bank-transfer", dur:800 },
   { k:"see", txt:"Found amount field, recipient selector, reference field, submit button.", sub:"DOM + screenshot captured", dur:900 },
-  { k:"ux", id:"UX-01", txt:"Amount input is type=\"text\" — no numeric keypad on mobile and no client-side numeric format, which accepts arbitrary characters.", sub:"transfer form · amount field", rec:"Use type=\"number\" with inputmode=\"decimal\" and a live currency mask.", dur:1700 },
+  { k:"ux", id:"UX-01", txt:"El cobro de la tarifa de $4.99 aplicada post-envío confunde al usuario sobre su balance real neto restante.", sub:"transfer form · fee disclosure", rec:"Desglosar la tarifa en el resumen previo al envío.", dur:1700 },
   { k:"think", txt:"Three invariants: positive amounts only, idempotent submissions, no overdraft. Cheapest first — negative amount.", dur:1700 },
 
   { k:"inv", phase:"hypothesize", id:"INV-01", txt:"Transfer amount must be a positive number greater than zero.", dur:1100 },
@@ -233,13 +272,13 @@ const RUN_BANKING: RunEvent[] = [
 
   { k:"atk", txt:"Submit transfer $200 (ref: T-0041)", frame:"bank-transfer1", sub:"POST /transfers {amount:200, ref:'T-0041'}", dur:950 },
   { k:"chk", txt:"Transfer #T-0041 created. Expected.", dur:750 },
-  { k:"ux", id:"UX-02", txt:"Submit button stays enabled and reference field is editable while the previous request is in flight — invites the duplicate that triggers the idempotency bug.", sub:"transfer form · submit button", rec:"Disable the form on submit and freeze the reference until the API returns 201/4xx.", dur:1700 },
+  { k:"ux", id:"UX-02", txt:"Falta de confirmación visual o estado de éxito tras una transferencia exitosa.", sub:"transfer · success state", rec:"Mostrar pantalla de \"Transferencia Enviada\" antes de volver al dashboard.", dur:1700 },
   { k:"atk", txt:"Re-submit identical payload", frame:"bank-transfer2", dur:950 },
   { k:"viol", finding:"F-02", txt:"Transfer #T-0042 created. Same reference accepted twice — $200 debited twice.", sub:"INV-02 violated — no idempotency on transfer endpoint", dur:1800 },
 
   { k:"atk", txt:"Transfer exact balance $1,200 (fee $4.99 applied post-check)", frame:"bank-overdraft", sub:"POST /transfers {amount:1200}", dur:950 },
   { k:"see", txt:"Transfer accepted. Fee deducted after balance check.", dur:900 },
-  { k:"ux", id:"UX-03", txt:"Transfer summary shows the amount only — the $4.99 fee is never previewed, so users don't realize the “send all” path will overdraft them.", sub:"transfer summary · fee disclosure", rec:"Render a line-item summary (amount + fee + new balance) above the confirm button.", dur:1700 },
+  { k:"ux", id:"UX-03", txt:"Los campos de cuenta clabe no tienen formato espaciado automático.", sub:"transfer form · clabe field", rec:"Formatear el input con espacios cada 4 dígitos para evitar errores de tipeo.", dur:1700 },
   { k:"viol", finding:"F-03", txt:"Balance: -$4.99. Fee applied after the zero-balance guard.", sub:"INV-03 violated — fee bypasses overdraft protection", dur:1800 },
 
   { k:"sys", phase:"report", txt:"Attack surface exhausted", sub:"3 contradictions · 0 false positives", dur:1000 },
